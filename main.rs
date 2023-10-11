@@ -9,7 +9,7 @@
 use derive_builder::Builder;
 
 #[derive(Builder)]
-struct Test {
+pub struct Test {
     executable: String,
     args: Vec<String>,
     env: Vec<String>,

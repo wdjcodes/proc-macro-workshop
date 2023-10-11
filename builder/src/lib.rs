@@ -18,59 +18,41 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
     let fields = parse_fields(fields);
 
-    let names = fields.iter().map(|f| &f.name);
+    let names: Vec<&Ident> = fields.iter().map(|f| &f.name).collect();
     let required= fields.iter().filter(|f| !f.optional);
-    let required_idents = required.clone().map(|f| &f.name);
-    let required_names = required.map(|f| f.name.to_string());
-    let types = fields.iter().map(|f| &f.ty);
+    let required_idents: Vec<&Ident> = required.clone().map(|f| &f.name).collect();
+    let required_names: Vec<String> = required.map(|f| f.name.to_string()).collect();
+    let optional_idents: Vec<&Ident> = fields.iter().filter(|f| f.optional).map(|f| &f.name).collect();
+    let types: Vec<&Type> = fields.iter().map(|f| &f.ty).collect();
     
     let output = quote! {
         impl #name {
             pub fn builder() -> #builder_name {
                 #builder_name {
-                    executable: None,
-                    args: None,
-                    env: None,
-                    current_dir: None,
+                    #(#names: None,)*
                 }
             }
         }
 
         pub struct #builder_name {
-            executable: Option<String>,
-            args: Option<Vec<String>>,
-            env: Option<Vec<String>>,
-            current_dir: Option<String>,
+            #(#names: Option<#types>,)*
         }
 
         impl #builder_name {
-            pub fn executable(&mut self, executable: String) -> &mut Self {
-                self.executable = Some(executable);
+            
+            #(pub fn #names(&mut self, value: #types) -> &mut Self {
+                self.#names = Some(value);
                 self
-            }
-
-            pub fn args(&mut self, args: Vec<String>) -> &mut Self {
-                self.args = Some(args);
-                self
-            }
-
-            pub fn env(&mut self, env: Vec<String>) -> &mut Self {
-                self.env = Some(env);
-                self
-            }
-
-            pub fn current_dir(&mut self, current_dir: String) -> &mut Self {
-                self.current_dir = Some(current_dir);
-                self
-            }
+            })*
             
             pub fn build(&mut self) -> Result<#name, Box<dyn std::error::Error>>{
                 #(if self.#required_idents == None {
-                    Err("No value given for non optional field {}", #required_names);
-                })*;
+                    return Err(format!("No value given for non optional field {}", #required_names).into());
+                })*
                 
                 Ok(#name {
-                    #(#names: #types,)*
+                    #(#required_idents: self.#required_idents.as_ref().unwrap().clone(),)*
+                    #(#optional_idents: self.#optional_idents.clone(),)*
                 })
             }
         }
@@ -89,9 +71,7 @@ struct Field {
 fn parse_fields(fields: Fields) -> Vec<Field> {
     let mut parsed = vec![];
     fields.iter().for_each(|f| {
-        println!("{:?}", f.ident.as_ref().unwrap());
         let field = if let Type::Path(path) = &f.ty {
-            path.path.segments.iter().for_each(|p| println!("\t{:?}", p.ident));
             let last = path.path.segments.iter().last().unwrap();
             if last.ident == "Option" {
                 let ty = if let PathArguments::AngleBracketed(args) = &last.arguments {
