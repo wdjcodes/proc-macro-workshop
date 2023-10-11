@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use syn::{parse_macro_input, DeriveInput, Ident};
+use syn::{Ident, Type, Fields, PathArguments, GenericArgument, parse_macro_input, DeriveInput};
 use quote::quote;
 
 #[proc_macro_derive(Builder)]
@@ -9,6 +9,21 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let name = derive_input.ident;
     let builder_name = Ident::new(&format!("{}Builder", name), Span::call_site());
 
+    let fields = match derive_input.data {
+        syn::Data::Struct(sd) => sd.fields,
+        syn::Data::Enum(_) => unimplemented!(),
+        syn::Data::Union(_) => unimplemented!(),
+    };
+    
+
+    let fields = parse_fields(fields);
+
+    let names = fields.iter().map(|f| &f.name);
+    let required= fields.iter().filter(|f| !f.optional);
+    let required_idents = required.clone().map(|f| &f.name);
+    let required_names = required.map(|f| f.name.to_string());
+    let types = fields.iter().map(|f| &f.ty);
+    
     let output = quote! {
         impl #name {
             pub fn builder() -> #builder_name {
@@ -48,21 +63,67 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 self.current_dir = Some(current_dir);
                 self
             }
-
-            pub fn build(&mut self) -> Result<#name, Box<dyn std::error::Error>> {
-                if self.executable == None || self.args == None 
-                    || self.env == None || self.current_dir == None {
-                        return Err("All fields must be set".to_string().into());
-                }
+            
+            pub fn build(&mut self) -> Result<#name, Box<dyn std::error::Error>>{
+                #(if self.#required_idents == None {
+                    Err("No value given for non optional field {}", #required_names);
+                })*;
+                
                 Ok(#name {
-                    executable: self.executable.to_owned().unwrap(),
-                    args: self.args.to_owned().unwrap(),
-                    env: self.env.to_owned().unwrap(),
-                    current_dir: self.current_dir.to_owned().unwrap(),
+                    #(#names: #types,)*
                 })
             }
         }
 
     };
     output.into()
+}
+
+struct Field {
+    name: Ident,
+    optional: bool,
+    ty: Type,
+}
+
+
+fn parse_fields(fields: Fields) -> Vec<Field> {
+    let mut parsed = vec![];
+    fields.iter().for_each(|f| {
+        println!("{:?}", f.ident.as_ref().unwrap());
+        let field = if let Type::Path(path) = &f.ty {
+            path.path.segments.iter().for_each(|p| println!("\t{:?}", p.ident));
+            let last = path.path.segments.iter().last().unwrap();
+            if last.ident == "Option" {
+                let ty = if let PathArguments::AngleBracketed(args) = &last.arguments {
+                    let arg = args.args.iter().next().unwrap();
+                    if let GenericArgument::Type(ty) = arg {
+                        ty.clone()
+                    } else {
+                        unimplemented!();
+                    }
+                } else {
+                    unimplemented!();
+                };
+                Field {
+                    name: f.ident.as_ref().unwrap().clone(),
+                    optional: true,
+                    ty: ty,
+                }
+            } else {
+                Field {
+                    name: f.ident.as_ref().unwrap().clone(),
+                    optional: false,
+                    ty: f.ty.clone(),
+                }
+
+            }
+        } else {
+            unimplemented!()
+        };
+        parsed.push(field);
+
+        
+    });
+
+    parsed
 }
