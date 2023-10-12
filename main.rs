@@ -15,6 +15,8 @@ pub struct Test {
     env: Vec<String>,
     current_dir: String,
     test: std::option::Option<String>,
+    #[builder(each = "add_item")]
+    items: Vec<String>,
 }
 
 fn main() {}
