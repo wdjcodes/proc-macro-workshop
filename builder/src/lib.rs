@@ -16,7 +16,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
     };
     
 
-    let fields = parse_fields(fields);
+    let fields = match parse_fields(fields){
+        Ok(f) => f,
+        Err(e) => {return e;},
+    };
     let required: Vec<&Field> = fields.iter().filter(|f| !f.optional && !f.repeated).collect();
     let required_names: Vec<&Ident> = required.iter().map(|f| &f.name).collect();
     let required_name_lits: Vec<String> = required_names.iter().map(|i| i.to_string()).collect();
@@ -96,9 +99,9 @@ struct Field {
 }
 
 
-fn parse_fields(fields: Fields) -> Vec<Field> {
+fn parse_fields(fields: Fields) -> Result<Vec<Field>, TokenStream> {
     let mut parsed = vec![];
-    fields.iter().for_each(|f| {
+    for f in fields {
         let field = if let Type::Path(path) = &f.ty {
             let name = f.ident.as_ref().unwrap().clone();
             let mut repeated = false;
@@ -107,24 +110,26 @@ fn parse_fields(fields: Fields) -> Vec<Field> {
             let optional;
             let mut setter = None;
             
-            f.attrs.iter().for_each(|a| {
+            for a in f.attrs{
                 if let Some(ident) = a.path().get_ident() {
                     match ident.to_string().as_str() {
                         "builder" => {
-                            if let Some((attr, name))  = get_assignment(a) {
+                            if let Some((attr, name))  = get_assignment(&a) {
                                 match attr.to_string().as_str() {
                                     "each" => {
                                         appender = Some(name.clone());
                                         repeated = true;
                                     }
-                                    _ => {}
+                                    _ => {
+                                            return Err(syn::Error::new_spanned(a.meta, "expected `builder(each = \"...\")`").into_compile_error().into());
+                                        }
                                 }
                             }
                         }
                         _ => {}
                     }
                 }
-            });
+            }
             optional = is_option(path);
             if repeated || optional {
                 ty = get_bracketed_type(path);
@@ -142,9 +147,9 @@ fn parse_fields(fields: Fields) -> Vec<Field> {
         parsed.push(field);
 
         
-    });
+    }
 
-    parsed
+    Ok(parsed)
 }
 
 fn get_assignment(attr: &Attribute) -> Option<(Ident, Ident)> {
