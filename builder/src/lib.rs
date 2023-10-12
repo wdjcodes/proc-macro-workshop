@@ -11,7 +11,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
     let fields = match derive_input.data {
         syn::Data::Struct(sd) => sd.fields,
-        syn::Data::Enum(_) => unimplemented!(),
+        syn::Data::Enum(e) => return syn::Error::new(e.enum_token.span.join(name.span()).unwrap(), "#[derive(Builder)] can only be used on structs").into_compile_error().into(),
         syn::Data::Union(_) => unimplemented!(),
     };
     
@@ -42,27 +42,27 @@ pub fn derive(input: TokenStream) -> TokenStream {
         impl #name {
             pub fn builder() -> #builder_name {
                 #builder_name {
-                    #(#required_names: None,)*
-                    #(#optional_names: None,)*
-                    #(#repeated_names: vec![],)*
+                    #(#required_names: std::option::Option::None,)*
+                    #(#optional_names: std::option::Option::None,)*
+                    #(#repeated_names: std::vec![],)*
                 }
             }
         }
 
         pub struct #builder_name {
-            #(#required_names: Option<#required_types>,)*
-            #(#optional_names: Option<#optional_types>,)*
-            #(#repeated_names: Vec<#repeated_types>,)*
+            #(#required_names: std::option::Option<#required_types>,)*
+            #(#optional_names: std::option::Option<#optional_types>,)*
+            #(#repeated_names: std::vec::Vec<#repeated_types>,)*
         }
 
         impl #builder_name {
             
             #(pub fn #single_names(&mut self, value: #single_types) -> &mut Self {
-                self.#single_names = Some(value);
+                self.#single_names = std::option::Option::Some(value);
                 self
             })*
 
-            #(pub fn #repeated_setter_names(&mut self, vec: Vec<#repeated_setter_types>) -> &mut Self {
+            #(pub fn #repeated_setter_names(&mut self, vec: std::vec::Vec<#repeated_setter_types>) -> &mut Self {
                 self.#repeated_setter_names = vec;
                 self
             })*
@@ -72,12 +72,12 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 self
             })*
             
-            pub fn build(&mut self) -> Result<#name, Box<dyn std::error::Error>>{
-                #(if self.#required_names == None {
-                    return Err(format!("No value given for non optional field {}", #required_name_lits).into());
+            pub fn build(&mut self) -> std::result::Result<#name, std::boxed::Box<dyn std::error::Error>>{
+                #(if self.#required_names == std::option::Option::None {
+                    return std::result::Result::Err(format!("No value given for non optional field {}", #required_name_lits).into());
                 })*
                 
-                Ok(#name {
+                std::result::Result::Ok(#name {
                     #(#required_names: self.#required_names.as_ref().unwrap().clone(),)*
                     #(#optional_names: self.#optional_names.clone(),)*
                     #(#repeated_names: self.#repeated_names.clone().into_iter().collect(),)*
